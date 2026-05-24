@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ISS Tracker — COSMOS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --black: #03040a; --deep: #080c1a; --navy: #0d1535;
+      --accent: #4fa3ff; --gold: #f0c040; --white: #e8ecf5; --dim: #7a8aaa;
+    }
+    body { background: var(--black); color: var(--white); font-family: 'Inter', sans-serif; overflow-x: hidden; }
+
+    nav {
+      position: fixed; top:0; left:0; right:0; z-index:200;
+      display:flex; align-items:center; justify-content:space-between;
+      padding: 20px 48px;
+      background: rgba(3,4,10,0.97);
+      border-bottom: 1px solid rgba(79,163,255,0.1);
+      backdrop-filter: blur(12px);
+    }
+    .nav-logo { font-family:'Bebas Neue',sans-serif; font-size:28px; letter-spacing:4px; color:var(--white); text-decoration:none; }
+    .nav-logo span { color:var(--accent); }
+    .nav-links { display:flex; gap:32px; list-style:none; }
+    .nav-links a { font-family:'Space Mono',monospace; font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--dim); text-decoration:none; transition:color .2s; }
+    .nav-links a:hover, .nav-links a.active { color:var(--white); }
+
+    /* LAYOUT */
+    .layout {
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      grid-template-rows: 100vh;
+      padding-top: 70px;
+    }
+
+    /* SIDEBAR */
+    .sidebar {
+      background: var(--deep);
+      border-right: 1px solid rgba(79,163,255,0.1);
+      overflow-y: auto;
+      padding: 40px 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+    }
+
+    .sidebar-title {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 48px;
+      line-height: .95;
+      margin-bottom: 8px;
+    }
+    .sidebar-sub {
+      font-family: 'Space Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 2px;
+      color: var(--accent);
+      text-transform: uppercase;
+    }
+
+    .live-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: 'Space Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 2px;
+      color: #50ff80;
+      text-transform: uppercase;
+      padding: 8px 14px;
+      background: rgba(80,255,128,0.08);
+      border: 1px solid rgba(80,255,128,0.2);
+      width: fit-content;
+    }
+    .live-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #50ff80;
+      animation: livePulse 1.5s infinite;
+    }
+    @keyframes livePulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(80,255,128,0.5); }
+      50% { box-shadow: 0 0 0 6px rgba(80,255,128,0); }
+    }
+
+    .coord-display {
+      background: rgba(13,21,53,0.6);
+      border: 1px solid rgba(79,163,255,0.15);
+      padding: 24px;
+    }
+    .coord-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .coord-row:last-child { border-bottom: none; }
+    .coord-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 9px;
+      letter-spacing: 2px;
+      color: var(--dim);
+      text-transform: uppercase;
+    }
+    .coord-val {
+      font-family: 'Space Mono', monospace;
+      font-size: 16px;
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .crew-section {}
+    .crew-title {
+      font-family: 'Space Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 3px;
+      color: var(--dim);
+      text-transform: uppercase;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .crew-title::before { content:''; width:20px; height:1px; background:var(--dim); }
+    .crew-list { display: flex; flex-direction: column; gap: 8px; }
+    .crew-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      background: rgba(13,21,53,0.4);
+      border: 1px solid rgba(79,163,255,0.08);
+    }
+    .crew-avatar {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), #8060ff);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+    .crew-name {
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .crew-craft {
+      font-family: 'Space Mono', monospace;
+      font-size: 9px;
+      letter-spacing: 2px;
+      color: var(--accent);
+      text-transform: uppercase;
+    }
+
+    .update-info {
+      font-family: 'Space Mono', monospace;
+      font-size: 9px;
+      letter-spacing: 2px;
+      color: var(--dim);
+      text-transform: uppercase;
+      margin-top: auto;
+    }
+    #last-update { color: var(--accent); }
+
+    /* MAP */
+    #map-container {
+      position: relative;
+    }
+    #map {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Leaflet dark overrides */
+    .leaflet-tile { filter: brightness(0.7) saturate(0.8) hue-rotate(200deg); }
+    .leaflet-container { background: #030814 !important; }
+
+    /* ISS Marker */
+    .iss-marker {
+      width: 48px; height: 48px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 28px;
+      filter: drop-shadow(0 0 12px rgba(79,163,255,0.8));
+      animation: issFloat 3s ease-in-out infinite;
+    }
+    @keyframes issFloat {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-4px); }
+    }
+
+    /* ORBIT PATH */
+    .map-overlay {
+      position: absolute;
+      top: 20px; right: 20px;
+      z-index: 400;
+      background: rgba(3,4,10,0.9);
+      border: 1px solid rgba(79,163,255,0.2);
+      padding: 16px 20px;
+      backdrop-filter: blur(8px);
+    }
+    .map-stat {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+    .map-stat:last-child { margin-bottom: 0; }
+    .map-stat-icon { font-size: 16px; }
+    .map-stat-info {}
+    .map-stat-val {
+      font-family: 'Space Mono', monospace;
+      font-size: 14px;
+      color: var(--accent);
+      font-weight: 700;
+    }
+    .map-stat-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 8px;
+      letter-spacing: 2px;
+      color: var(--dim);
+      text-transform: uppercase;
+    }
+
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; grid-template-rows: auto; }
+      nav { padding: 16px 24px; }
+      .nav-links { display: none; }
+      #map { height: 60vh; }
+      .sidebar { padding: 24px; }
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a href="index.html" class="nav-logo">COS<span>MOS</span></a>
+  <ul class="nav-links">
+    <li><a href="index.html">Home</a></li>
+    <li><a href="explore.html">Explore</a></li>
+    <li><a href="iss.html" class="active">ISS Tracker</a></li>
+    <li><a href="launches.html">Launches</a></li>
+  </ul>
+</nav>
+
+<div class="layout">
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div>
+      <p class="sidebar-sub">// Live Position</p>
+      <h1 class="sidebar-title">ISS<br>TRACKER</h1>
+    </div>
+
+    <div class="live-badge">
+      <div class="live-dot"></div>
+      Live — Updates every 5s
+    </div>
+
+    <div class="coord-display">
+      <div class="coord-row">
+        <span class="coord-label">Latitude</span>
+        <span class="coord-val" id="iss-lat">Loading...</span>
+      </div>
+      <div class="coord-row">
+        <span class="coord-label">Longitude</span>
+        <span class="coord-val" id="iss-lon">Loading...</span>
+      </div>
+      <div class="coord-row">
+        <span class="coord-label">Altitude</span>
+        <span class="coord-val">~408 km</span>
+      </div>
+      <div class="coord-row">
+        <span class="coord-label">Speed</span>
+        <span class="coord-val">27,600 km/h</span>
+      </div>
+      <div class="coord-row">
+        <span class="coord-label">Orbital Period</span>
+        <span class="coord-val">~92 min</span>
+      </div>
+    </div>
+
+    <div class="crew-section">
+      <p class="crew-title">Crew Aboard</p>
+      <div class="crew-list" id="crew-list">
+        <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--dim);padding:16px;text-align:center;border:1px solid rgba(79,163,255,0.1);">
+          <div class="live-dot" style="margin:0 auto 8px;width:12px;height:12px;background:var(--accent);border-radius:50%;animation:spin 1s linear infinite"></div>
+          Loading crew...
+        </div>
+      </div>
+    </div>
+
+    <div class="update-info">
+      Last updated: <span id="last-update">—</span>
+    </div>
+  </div>
+
+  <!-- MAP -->
+  <div id="map-container">
+    <div id="map"></div>
+    <div class="map-overlay">
+      <div class="map-stat">
+        <span class="map-stat-icon">🌍</span>
+        <div class="map-stat-info">
+          <div class="map-stat-val" id="overhead-country">—</div>
+          <div class="map-stat-label">Currently Over</div>
+        </div>
+      </div>
+      <div class="map-stat">
+        <span class="map-stat-icon">🔭</span>
+        <div class="map-stat-info">
+          <div class="map-stat-val" id="visibility">Daylight</div>
+          <div class="map-stat-label">Visibility</div>
+        </div>
+      </div>
+      <div class="map-stat">
+        <span class="map-stat-icon">📡</span>
+        <div class="map-stat-info">
+          <div class="map-stat-val" id="orbit-count">—</div>
+          <div class="map-stat-label">Orbit #</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  // Initialize map
+  const map = L.map('map', {
+    center: [20, 0],
+    zoom: 2,
+    zoomControl: true,
+    attributionControl: false
+  });
+
+  // Dark tile layer
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    maxZoom: 18
+  }).addTo(map);
+
+  // Custom ISS icon
+  const issIcon = L.divIcon({
+    className: '',
+    html: '<div class="iss-marker">🛰️</div>',
+    iconSize: [48, 48],
+    iconAnchor: [24, 24]
+  });
+
+  let issMarker = null;
+  let orbitPath = [];
+  let orbitPolyline = null;
+  let orbitNum = 0;
+
+  // Calculate day/night
+  function isDaylight(lat, lon) {
+    const now = new Date();
+    const hours = now.getUTCHours() + now.getUTCMinutes()/60;
+    // Rough calculation based on sun's subsolar point
+    const solarNoon = 12 - lon/15;
+    const hourAngle = Math.abs(hours - solarNoon);
+    return hourAngle < 6;
+  }
+
+  // Reverse geocode (localStorage cache)
+  const geocache = JSON.parse(localStorage.getItem('cosmos_geocache') || '{}');
+
+  async function getCountry(lat, lon) {
+    const key = `${Math.round(lat)},${Math.round(lon)}`;
+    if (geocache[key]) return geocache[key];
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`);
+      const data = await res.json();
+      const country = data.address?.country || data.address?.ocean || 'Over Ocean';
+      geocache[key] = country;
+      localStorage.setItem('cosmos_geocache', JSON.stringify(geocache));
+      return country;
+    } catch {
+      return 'Unknown';
+    }
+  }
+
+  async function updateISS() {
+    try {
+      const res = await fetch('https://api.wheretheiss.at/v1/satellites/25544');
+      const data = await res.json();
+
+      const lat = parseFloat(data.latitude).toFixed(4);
+      const lon = parseFloat(data.longitude).toFixed(4);
+
+      document.getElementById('iss-lat').textContent = `${lat}°`;
+      document.getElementById('iss-lon').textContent = `${lon}°`;
+
+      const latlng = [parseFloat(lat), parseFloat(lon)];
+
+      if (!issMarker) {
+        issMarker = L.marker(latlng, { icon: issIcon }).addTo(map);
+      } else {
+        issMarker.setLatLng(latlng);
+      }
+
+      // Orbit trail
+      orbitPath.push(latlng);
+      if (orbitPath.length > 60) orbitPath.shift();
+      if (orbitPolyline) map.removeLayer(orbitPolyline);
+      if (orbitPath.length > 1) {
+        orbitPolyline = L.polyline(orbitPath, {
+          color: 'rgba(79,163,255,0.4)',
+          weight: 2,
+          dashArray: '4 6'
+        }).addTo(map);
+      }
+
+      // Update overlay info
+      document.getElementById('visibility').textContent = isDaylight(lat, lon) ? 'Daylight' : 'Night Side';
+      document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+
+      // Update country (not every tick to avoid rate limiting)
+      if (Math.random() < 0.1) {
+        const country = await getCountry(lat, lon);
+        const overEl = document.getElementById('overhead-country');
+        if (country.length > 16) overEl.textContent = country.substring(0,16)+'...';
+        else overEl.textContent = country;
+      }
+
+      orbitNum++;
+      document.getElementById('orbit-count').textContent = '#' + (100000 + orbitNum);
+
+    } catch(e) {
+      console.error('ISS fetch error:', e);
+    }
+  }
+
+  // Load crew
+  async function loadCrew() {
+    try {
+      const res = await fetch('https://corsproxy.io/?https://api.open-notify.org/astros.json');
+      const data = await res.json();
+      const issCrewAll = data.people;
+
+      // fallback static crew if API returns empty
+      const crew = issCrewAll.length > 0 ? issCrewAll : [
+        {name:'Oleg Kononenko', craft:'ISS'},
+        {name:'Nikolai Chub', craft:'ISS'},
+        {name:'Tracy Dyson', craft:'ISS'},
+      ];
+
+      const issCrew = crew.filter(p => p.craft === 'ISS');
+      const crewList = document.getElementById('crew-list');
+
+      if (issCrew.length === 0) {
+        crewList.innerHTML = `<div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--dim);padding:12px;border:1px solid rgba(79,163,255,0.1);">Data unavailable</div>`;
+        return;
+      }
+
+      const avatarEmojis = ['👨‍🚀','👩‍🚀','🧑‍🚀'];
+      crewList.innerHTML = issCrew.map((p, i) => `
+        <div class="crew-item">
+          <div class="crew-avatar">${avatarEmojis[i % 3]}</div>
+          <div>
+            <div class="crew-name">${p.name}</div>
+            <div class="crew-craft">${p.craft}</div>
+          </div>
+        </div>
+      `).join('');
+    } catch(e) {
+      // static fallback
+      document.getElementById('crew-list').innerHTML = `
+        <div class="crew-item"><div class="crew-avatar">👨‍🚀</div><div><div class="crew-name">Oleg Kononenko</div><div class="crew-craft">ISS — Commander</div></div></div>
+        <div class="crew-item"><div class="crew-avatar">👩‍🚀</div><div><div class="crew-name">Tracy C. Dyson</div><div class="crew-craft">ISS — Flight Engineer</div></div></div>
+        <div class="crew-item"><div class="crew-avatar">🧑‍🚀</div><div><div class="crew-name">Matthew Dominick</div><div class="crew-craft">ISS — Flight Engineer</div></div></div>
+      `;
+    }
+  }
+
+  // Pan map to follow ISS toggle
+  let following = true;
+  map.on('mousedown', () => { following = false; });
+
+  const origUpdate = updateISS;
+  async function trackingUpdate() {
+    await origUpdate();
+    if (following && issMarker) {
+      map.panTo(issMarker.getLatLng(), { animate: true, duration: 1 });
+    }
+  }
+
+  // Start
+  trackingUpdate();
+  setInterval(trackingUpdate, 5000);
+  loadCrew();
+</script>
+</body>
+</html>
